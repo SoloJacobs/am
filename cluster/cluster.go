@@ -11,6 +11,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package cluster uses `hashicorp/memberlist` to maintain a list of
+// alertmanagers, which then exchange
+// * a notification log,
+// * periodically check the health of the other members,
+// * can forward silences.
 package cluster
 
 import (
