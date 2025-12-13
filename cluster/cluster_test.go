@@ -21,7 +21,6 @@ import (
 	"github.com/hashicorp/go-sockaddr"
 	"github.com/stretchr/testify/require"
 
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/promslog"
 )
 
@@ -45,7 +44,6 @@ func testJoinLeave(t *testing.T) {
 	logger := promslog.NewNopLogger()
 	p, err := Create(
 		logger,
-		prometheus.NewRegistry(),
 		"127.0.0.1:0",
 		"",
 		[]string{},
@@ -82,7 +80,6 @@ func testJoinLeave(t *testing.T) {
 	// Create the peer who joins the first.
 	p2, err := Create(
 		logger,
-		prometheus.NewRegistry(),
 		"127.0.0.1:0",
 		"",
 		[]string{p.Self().Address()},
@@ -120,7 +117,6 @@ func testReconnect(t *testing.T) {
 	logger := promslog.NewNopLogger()
 	p, err := Create(
 		logger,
-		prometheus.NewRegistry(),
 		"127.0.0.1:0",
 		"",
 		[]string{},
@@ -148,7 +144,6 @@ func testReconnect(t *testing.T) {
 
 	p2, err := Create(
 		logger,
-		prometheus.NewRegistry(),
 		"127.0.0.1:0",
 		"",
 		[]string{},
@@ -191,7 +186,6 @@ func testRemoveFailedPeers(t *testing.T) {
 	logger := promslog.NewNopLogger()
 	p, err := Create(
 		logger,
-		prometheus.NewRegistry(),
 		"127.0.0.1:0",
 		"",
 		[]string{},
@@ -245,7 +239,6 @@ func testInitiallyFailingPeers(t *testing.T) {
 	peerAddrs := []string{myAddr, "2.3.4.5:5000", "3.4.5.6:5000", "foo.example.com:5000"}
 	p, err := Create(
 		logger,
-		prometheus.NewRegistry(),
 		"127.0.0.1:0",
 		"",
 		[]string{},
@@ -295,7 +288,6 @@ func testTLSConnection(t *testing.T) {
 	require.NoError(t, err)
 	p1, err := Create(
 		logger,
-		prometheus.NewRegistry(),
 		"127.0.0.1:0",
 		"",
 		[]string{},
@@ -329,7 +321,6 @@ func testTLSConnection(t *testing.T) {
 	require.NoError(t, err)
 	p2, err := Create(
 		logger,
-		prometheus.NewRegistry(),
 		"127.0.0.1:0",
 		"",
 		[]string{p1.Self().Address()},
@@ -369,7 +360,6 @@ func testPeerNames(t *testing.T, name1, name2 string) {
 	logger := promslog.NewNopLogger()
 	p1, err := Create(
 		logger,
-		prometheus.NewRegistry(),
 		"127.0.0.1:0",
 		"",
 		[]string{},
@@ -406,7 +396,6 @@ func testPeerNames(t *testing.T, name1, name2 string) {
 	// Create the peer who joins the first.
 	p2, err := Create(
 		logger,
-		prometheus.NewRegistry(),
 		"127.0.0.1:0",
 		"",
 		[]string{p1.Self().Address()},

@@ -33,8 +33,6 @@ import (
 
 	"github.com/hashicorp/memberlist"
 	"github.com/oklog/ulid/v2"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
 // ClusterPeer represents a single Peer in a gossip cluster.
@@ -79,14 +77,6 @@ type Peer struct {
 
 	knownPeers    []string
 	advertiseAddr string
-
-	failedReconnectionsCounter prometheus.Counter
-	reconnectionsCounter       prometheus.Counter
-	failedRefreshCounter       prometheus.Counter
-	refreshCounter             prometheus.Counter
-	peerLeaveCounter           prometheus.Counter
-	peerUpdateCounter          prometheus.Counter
-	peerJoinCounter            prometheus.Counter
 
 	logger *slog.Logger
 }
@@ -137,7 +127,6 @@ const (
 
 func Create(
 	l *slog.Logger,
-	reg prometheus.Registerer,
 	bindAddr string,
 	advertiseAddr string,
 	knownPeers []string,
@@ -219,8 +208,6 @@ func Create(
 		knownPeers:          knownPeers,
 	}
 
-	p.register(reg, name)
-
 	retransmit := max(len(knownPeers)/2, 3)
 	p.delegate = newDelegate(l, p, retransmit)
 
@@ -253,7 +240,7 @@ func Create(
 
 	if tlsTransportConfig != nil {
 		l.Info("using TLS for gossip")
-		cfg.Transport, err = NewTLSTransport(context.Background(), l, reg, cfg.BindAddr, cfg.BindPort, tlsTransportConfig)
+		cfg.Transport, err = NewTLSTransport(context.Background(), l, cfg.BindAddr, cfg.BindPort, tlsTransportConfig)
 		if err != nil {
 			return nil, fmt.Errorf("tls transport: %w", err)
 		}
@@ -346,57 +333,6 @@ func (p *Peer) setInitialFailed(peers []string, myAddr string) {
 	}
 }
 
-func (p *Peer) register(reg prometheus.Registerer, name string) {
-	peerInfo := promauto.With(reg).NewGauge(
-		prometheus.GaugeOpts{
-			Name:        "alertmanager_cluster_peer_info",
-			Help:        "A metric with a constant '1' value labeled by peer name.",
-			ConstLabels: prometheus.Labels{"peer": name},
-		},
-	)
-	peerInfo.Set(1)
-	promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
-		Name: "alertmanager_cluster_failed_peers",
-		Help: "Number indicating the current number of failed peers in the cluster.",
-	}, func() float64 {
-		p.peerLock.RLock()
-		defer p.peerLock.RUnlock()
-
-		return float64(len(p.failedPeers))
-	})
-	p.failedReconnectionsCounter = promauto.With(reg).NewCounter(prometheus.CounterOpts{
-		Name: "alertmanager_cluster_reconnections_failed_total",
-		Help: "A counter of the number of failed cluster peer reconnection attempts.",
-	})
-
-	p.reconnectionsCounter = promauto.With(reg).NewCounter(prometheus.CounterOpts{
-		Name: "alertmanager_cluster_reconnections_total",
-		Help: "A counter of the number of cluster peer reconnections.",
-	})
-
-	p.failedRefreshCounter = promauto.With(reg).NewCounter(prometheus.CounterOpts{
-		Name: "alertmanager_cluster_refresh_join_failed_total",
-		Help: "A counter of the number of failed cluster peer joined attempts via refresh.",
-	})
-	p.refreshCounter = promauto.With(reg).NewCounter(prometheus.CounterOpts{
-		Name: "alertmanager_cluster_refresh_join_total",
-		Help: "A counter of the number of cluster peer joined via refresh.",
-	})
-
-	p.peerLeaveCounter = promauto.With(reg).NewCounter(prometheus.CounterOpts{
-		Name: "alertmanager_cluster_peers_left_total",
-		Help: "A counter of the number of peers that have left.",
-	})
-	p.peerUpdateCounter = promauto.With(reg).NewCounter(prometheus.CounterOpts{
-		Name: "alertmanager_cluster_peers_update_total",
-		Help: "A counter of the number of peers that have updated metadata.",
-	})
-	p.peerJoinCounter = promauto.With(reg).NewCounter(prometheus.CounterOpts{
-		Name: "alertmanager_cluster_peers_joined_total",
-		Help: "A counter of the number of peers that have joined.",
-	})
-}
-
 func (p *Peer) runPeriodicTask(d time.Duration, f func()) {
 	tick := time.NewTicker(d)
 	defer tick.Stop()
@@ -441,10 +377,8 @@ func (p *Peer) reconnect() {
 		// reconnect is successful, they will be announced in
 		// peerJoin().
 		if _, err := p.mlist.Join([]string{pr.Address()}); err != nil {
-			p.failedReconnectionsCounter.Inc()
 			logger.Debug("failure", "peer", pr.Node, "addr", pr.Address(), "err", err)
 		} else {
-			p.reconnectionsCounter.Inc()
 			logger.Debug("success", "peer", pr.Node, "addr", pr.Address())
 		}
 	}
@@ -473,10 +407,8 @@ func (p *Peer) refresh() {
 
 		if !isPeerFound {
 			if _, err := p.mlist.Join([]string{peer}); err != nil {
-				p.failedRefreshCounter.Inc()
 				logger.Warn("failure", "addr", peer, "err", err)
 			} else {
-				p.refreshCounter.Inc()
 				logger.Debug("success", "addr", peer)
 			}
 		}
@@ -503,7 +435,6 @@ func (p *Peer) peerJoin(n *memberlist.Node) {
 	}
 
 	p.peers[n.Address()] = pr
-	p.peerJoinCounter.Inc()
 
 	if oldStatus == StatusFailed {
 		p.logger.Debug("peer rejoined", "peer", pr.Node)
@@ -527,7 +458,6 @@ func (p *Peer) peerLeave(n *memberlist.Node) {
 	p.failedPeers = append(p.failedPeers, pr)
 	p.peers[n.Address()] = pr
 
-	p.peerLeaveCounter.Inc()
 	p.logger.Debug("peer left", "peer", pr.Node)
 }
 
@@ -545,13 +475,12 @@ func (p *Peer) peerUpdate(n *memberlist.Node) {
 	pr.Node = n
 	p.peers[n.Address()] = pr
 
-	p.peerUpdateCounter.Inc()
 	p.logger.Debug("peer updated", "peer", pr.Node)
 }
 
 // AddState adds a new state that will be gossiped. It returns a channel to which
 // broadcast messages for the state can be sent.
-func (p *Peer) AddState(key string, s State, reg prometheus.Registerer) ClusterChannel {
+func (p *Peer) AddState(key string, s State) ClusterChannel {
 	p.mtx.Lock()
 	p.states[key] = s
 	p.mtx.Unlock()

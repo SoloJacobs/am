@@ -29,8 +29,6 @@ import (
 
 	"github.com/hashicorp/go-sockaddr"
 	"github.com/hashicorp/memberlist"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 	common "github.com/prometheus/common/config"
 	"github.com/prometheus/exporter-toolkit/web"
 )
@@ -56,13 +54,6 @@ type TLSTransport struct {
 	connPool     *connectionPool
 	tlsServerCfg *tls.Config
 	tlsClientCfg *tls.Config
-
-	packetsSent prometheus.Counter
-	packetsRcvd prometheus.Counter
-	streamsSent prometheus.Counter
-	streamsRcvd prometheus.Counter
-	readErrs    prometheus.Counter
-	writeErrs   *prometheus.CounterVec
 }
 
 // NewTLSTransport returns a TLS transport with the given configuration.
@@ -72,15 +63,10 @@ type TLSTransport struct {
 func NewTLSTransport(
 	ctx context.Context,
 	logger *slog.Logger,
-	reg prometheus.Registerer,
 	bindAddr string,
 	bindPort int,
 	cfg *TLSTransportConfig,
 ) (*TLSTransport, error) {
-	if reg == nil {
-		return nil, errors.New("missing Prometheus registry")
-	}
-
 	if cfg == nil {
 		return nil, errors.New("must specify TLSTransportConfig")
 	}
@@ -126,8 +112,6 @@ func NewTLSTransport(
 		tlsServerCfg: tlsServerCfg,
 		tlsClientCfg: tlsClientCfg,
 	}
-
-	t.registerMetrics(reg)
 
 	go func() {
 		t.listen()
@@ -206,16 +190,13 @@ func (t *TLSTransport) Shutdown() error {
 func (t *TLSTransport) WriteTo(b []byte, addr string) (time.Time, error) {
 	conn, err := t.connPool.borrowConnection(addr, DefaultTCPTimeout)
 	if err != nil {
-		t.writeErrs.WithLabelValues("packet").Inc()
 		return time.Now(), fmt.Errorf("failed to dial: %w", err)
 	}
 	fromAddr := t.listener.Addr().String()
 	err = conn.writePacket(fromAddr, b)
 	if err != nil {
-		t.writeErrs.WithLabelValues("packet").Inc()
 		return time.Now(), fmt.Errorf("failed to write packet: %w", err)
 	}
-	t.packetsSent.Add(float64(len(b)))
 	return time.Now(), nil
 }
 
@@ -224,16 +205,13 @@ func (t *TLSTransport) WriteTo(b []byte, addr string) (time.Time, error) {
 func (t *TLSTransport) DialTimeout(addr string, timeout time.Duration) (net.Conn, error) {
 	conn, err := dialTLSConn(addr, timeout, t.tlsClientCfg)
 	if err != nil {
-		t.writeErrs.WithLabelValues("stream").Inc()
 		return nil, fmt.Errorf("failed to dial: %w", err)
 	}
 	err = conn.writeStream()
 	netConn := conn.getRawConn()
 	if err != nil {
-		t.writeErrs.WithLabelValues("stream").Inc()
 		return netConn, fmt.Errorf("failed to create stream connection: %w", err)
 	}
-	t.streamsSent.Inc()
 	return netConn, nil
 }
 
@@ -258,7 +236,6 @@ func (t *TLSTransport) listen() {
 				if strings.Contains(err.Error(), "use of closed network connection") {
 					return
 				}
-				t.readErrs.Inc()
 				t.logger.Debug("error accepting connection", "err", err)
 
 			} else {
@@ -273,7 +250,6 @@ func (t *TLSTransport) handle(conn net.Conn) {
 		packet, err := rcvTLSConn(conn).read()
 		if err != nil {
 			t.logger.Debug("error reading from connection", "err", err)
-			t.readErrs.Inc()
 			return
 		}
 		select {
@@ -281,67 +257,11 @@ func (t *TLSTransport) handle(conn net.Conn) {
 			return
 		default:
 			if packet != nil {
-				n := len(packet.Buf)
 				t.packetCh <- packet
-				t.packetsRcvd.Add(float64(n))
 			} else {
 				t.streamCh <- conn
-				t.streamsRcvd.Inc()
 				return
 			}
 		}
 	}
-}
-
-func (t *TLSTransport) registerMetrics(reg prometheus.Registerer) {
-	t.packetsSent = promauto.With(reg).NewCounter(
-		prometheus.CounterOpts{
-			Namespace: metricNamespace,
-			Subsystem: metricSubsystem,
-			Name:      "packet_bytes_sent_total",
-			Help:      "The number of packet bytes sent to outgoing connections (excluding internal metadata).",
-		},
-	)
-	t.packetsRcvd = promauto.With(reg).NewCounter(
-		prometheus.CounterOpts{
-			Namespace: metricNamespace,
-			Subsystem: metricSubsystem,
-			Name:      "packet_bytes_received_total",
-			Help:      "The number of packet bytes received from incoming connections (excluding internal metadata).",
-		},
-	)
-	t.streamsSent = promauto.With(reg).NewCounter(
-		prometheus.CounterOpts{
-			Namespace: metricNamespace,
-			Subsystem: metricSubsystem,
-			Name:      "stream_connections_sent_total",
-			Help:      "The number of stream connections sent.",
-		},
-	)
-
-	t.streamsRcvd = promauto.With(reg).NewCounter(
-		prometheus.CounterOpts{
-			Namespace: metricNamespace,
-			Subsystem: metricSubsystem,
-			Name:      "stream_connections_received_total",
-			Help:      "The number of stream connections received.",
-		},
-	)
-	t.readErrs = promauto.With(reg).NewCounter(
-		prometheus.CounterOpts{
-			Namespace: metricNamespace,
-			Subsystem: metricSubsystem,
-			Name:      "read_errors_total",
-			Help:      "The number of errors encountered while reading from incoming connections.",
-		},
-	)
-	t.writeErrs = promauto.With(reg).NewCounterVec(
-		prometheus.CounterOpts{
-			Namespace: metricNamespace,
-			Subsystem: metricSubsystem,
-			Name:      "write_errors_total",
-			Help:      "The number of errors encountered while writing to outgoing connections.",
-		},
-		[]string{"connection_type"},
-	)
 }
