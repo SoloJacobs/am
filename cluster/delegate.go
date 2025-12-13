@@ -19,8 +19,6 @@ import (
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/hashicorp/memberlist"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 
 	"github.com/prometheus/alertmanager/cluster/clusterpb"
 )
@@ -39,106 +37,18 @@ type delegate struct {
 
 	logger *slog.Logger
 	bcast  *memberlist.TransmitLimitedQueue
-
-	messagesReceived     *prometheus.CounterVec
-	messagesReceivedSize *prometheus.CounterVec
-	messagesSent         *prometheus.CounterVec
-	messagesSentSize     *prometheus.CounterVec
-	messagesPruned       prometheus.Counter
-	nodeAlive            *prometheus.CounterVec
-	nodePingDuration     *prometheus.HistogramVec
-	conflictsCount       prometheus.Counter
 }
 
-func newDelegate(l *slog.Logger, reg prometheus.Registerer, p *Peer, retransmit int) *delegate {
+func newDelegate(l *slog.Logger, p *Peer, retransmit int) *delegate {
 	bcast := &memberlist.TransmitLimitedQueue{
 		NumNodes:       p.ClusterSize,
 		RetransmitMult: retransmit,
 	}
-	messagesReceived := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-		Name: "alertmanager_cluster_messages_received_total",
-		Help: "Total number of cluster messages received.",
-	}, []string{"msg_type"})
-	messagesReceivedSize := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-		Name: "alertmanager_cluster_messages_received_size_total",
-		Help: "Total size of cluster messages received.",
-	}, []string{"msg_type"})
-	messagesSent := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-		Name: "alertmanager_cluster_messages_sent_total",
-		Help: "Total number of cluster messages sent.",
-	}, []string{"msg_type"})
-	messagesSentSize := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-		Name: "alertmanager_cluster_messages_sent_size_total",
-		Help: "Total size of cluster messages sent.",
-	}, []string{"msg_type"})
-	messagesPruned := promauto.With(reg).NewCounter(prometheus.CounterOpts{
-		Name: "alertmanager_cluster_messages_pruned_total",
-		Help: "Total number of cluster messages pruned.",
-	})
-	promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
-		Name: "alertmanager_cluster_members",
-		Help: "Number indicating current number of members in cluster.",
-	}, func() float64 {
-		return float64(p.ClusterSize())
-	})
-	promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
-		Name: "alertmanager_peer_position",
-		Help: "Position the Alertmanager instance believes it's in. The position determines a peer's behavior in the cluster.",
-	}, func() float64 {
-		return float64(p.Position())
-	})
-	promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
-		Name: "alertmanager_cluster_health_score",
-		Help: "Health score of the cluster. Lower values are better and zero means 'totally healthy'.",
-	}, func() float64 {
-		return float64(p.mlist.GetHealthScore())
-	})
-	promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
-		Name: "alertmanager_cluster_messages_queued",
-		Help: "Number of cluster messages which are queued.",
-	}, func() float64 {
-		return float64(bcast.NumQueued())
-	})
-	nodeAlive := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-		Name: "alertmanager_cluster_alive_messages_total",
-		Help: "Total number of received alive messages.",
-	}, []string{"peer"},
-	)
-	nodePingDuration := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
-		Name:                            "alertmanager_cluster_pings_seconds",
-		Help:                            "Histogram of latencies for ping messages.",
-		Buckets:                         []float64{.005, .01, .025, .05, .1, .25, .5},
-		NativeHistogramBucketFactor:     1.1,
-		NativeHistogramMaxBucketNumber:  100,
-		NativeHistogramMinResetDuration: 1 * time.Hour,
-	}, []string{"peer"},
-	)
-	conflictsCount := promauto.With(reg).NewCounter(prometheus.CounterOpts{
-		Name: "alertmanager_cluster_peer_name_conflicts_total",
-		Help: "Total number of times memberlist has noticed conflicting peer names",
-	})
-
-	messagesReceived.WithLabelValues(fullState)
-	messagesReceivedSize.WithLabelValues(fullState)
-	messagesReceived.WithLabelValues(update)
-	messagesReceivedSize.WithLabelValues(update)
-	messagesSent.WithLabelValues(fullState)
-	messagesSentSize.WithLabelValues(fullState)
-	messagesSent.WithLabelValues(update)
-	messagesSentSize.WithLabelValues(update)
 
 	d := &delegate{
-		logger:               l,
-		Peer:                 p,
-		bcast:                bcast,
-		messagesReceived:     messagesReceived,
-		messagesReceivedSize: messagesReceivedSize,
-		messagesSent:         messagesSent,
-		messagesSentSize:     messagesSentSize,
-		messagesPruned:       messagesPruned,
-		nodeAlive:            nodeAlive,
-		nodePingDuration:     nodePingDuration,
-		conflictsCount:       conflictsCount,
+		logger: l,
+		Peer:   p,
+		bcast:  bcast,
 	}
 
 	go d.handleQueueDepth()
@@ -153,9 +63,6 @@ func (d *delegate) NodeMeta(limit int) []byte {
 
 // NotifyMsg is the callback invoked when a user-level gossip message is received.
 func (d *delegate) NotifyMsg(b []byte) {
-	d.messagesReceived.WithLabelValues(update).Inc()
-	d.messagesReceivedSize.WithLabelValues(update).Add(float64(len(b)))
-
 	var p clusterpb.Part
 	if err := proto.Unmarshal(b, &p); err != nil {
 		d.logger.Warn("decode broadcast", "err", err)
@@ -178,17 +85,20 @@ func (d *delegate) NotifyMsg(b []byte) {
 // NotifyConflict is the callback when memberlist encounters two nodes with the same ID.
 func (d *delegate) NotifyConflict(existing, other *memberlist.Node) {
 	d.logger.Warn("Found conflicting peer IDs", "peer", existing.Name)
-	d.conflictsCount.Inc()
+}
+
+func (d *delegate) NotifyPingComplete(_ *memberlist.Node, _ time.Duration, _ []byte) {
+	d.logger.Debug("Completed ping")
+}
+
+func (d *delegate) NotifyAlive(_ *memberlist.Node) error {
+	d.logger.Debug("Alive")
+	return nil
 }
 
 // GetBroadcasts is called when user data messages can be broadcasted.
 func (d *delegate) GetBroadcasts(overhead, limit int) [][]byte {
-	msgs := d.bcast.GetBroadcasts(overhead, limit)
-	d.messagesSent.WithLabelValues(update).Add(float64(len(msgs)))
-	for _, m := range msgs {
-		d.messagesSentSize.WithLabelValues(update).Add(float64(len(m)))
-	}
-	return msgs
+	return d.bcast.GetBroadcasts(overhead, limit)
 }
 
 // LocalState is called when gossip fetches local state.
@@ -212,15 +122,10 @@ func (d *delegate) LocalState(_ bool) []byte {
 		d.logger.Warn("encode local state", "err", err)
 		return nil
 	}
-	d.messagesSent.WithLabelValues(fullState).Inc()
-	d.messagesSentSize.WithLabelValues(fullState).Add(float64(len(b)))
 	return b
 }
 
 func (d *delegate) MergeRemoteState(buf []byte, _ bool) {
-	d.messagesReceived.WithLabelValues(fullState).Inc()
-	d.messagesReceivedSize.WithLabelValues(fullState).Add(float64(len(buf)))
-
 	var fs clusterpb.FullState
 	if err := proto.Unmarshal(buf, &fs); err != nil {
 		d.logger.Warn("merge remote state", "err", err)
@@ -259,20 +164,9 @@ func (d *delegate) NotifyUpdate(n *memberlist.Node) {
 	d.peerUpdate(n)
 }
 
-// NotifyAlive implements the memberlist.AliveDelegate interface.
-func (d *delegate) NotifyAlive(peer *memberlist.Node) error {
-	d.nodeAlive.WithLabelValues(peer.Name).Inc()
-	return nil
-}
-
 // AckPayload implements the memberlist.PingDelegate interface.
 func (d *delegate) AckPayload() []byte {
 	return []byte{}
-}
-
-// NotifyPingComplete implements the memberlist.PingDelegate interface.
-func (d *delegate) NotifyPingComplete(peer *memberlist.Node, rtt time.Duration, payload []byte) {
-	d.nodePingDuration.WithLabelValues(peer.Name).Observe(rtt.Seconds())
 }
 
 // handleQueueDepth ensures that the queue doesn't grow unbounded by pruning
@@ -287,7 +181,6 @@ func (d *delegate) handleQueueDepth() {
 			if n > maxQueueSize {
 				d.logger.Warn("dropping messages because too many are queued", "current", n, "limit", maxQueueSize)
 				d.bcast.Prune(maxQueueSize)
-				d.messagesPruned.Add(float64(n - maxQueueSize))
 			}
 		}
 	}

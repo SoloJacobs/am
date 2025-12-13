@@ -222,7 +222,7 @@ func Create(
 	p.register(reg, name)
 
 	retransmit := max(len(knownPeers)/2, 3)
-	p.delegate = newDelegate(l, reg, p, retransmit)
+	p.delegate = newDelegate(l, p, retransmit)
 
 	cfg := memberlist.DefaultLANConfig()
 	cfg.Name = name
@@ -572,7 +572,7 @@ func (p *Peer) AddState(key string, s State, reg prometheus.Registerer) ClusterC
 	sendOversize := func(n *memberlist.Node, b []byte) error {
 		return p.mlist.SendReliable(n, b)
 	}
-	return NewChannel(key, send, peers, sendOversize, p.logger, p.stopc, reg)
+	return NewChannel(key, send, peers, sendOversize, p.logger, p.stopc)
 }
 
 // Leave the cluster, waiting up to timeout.

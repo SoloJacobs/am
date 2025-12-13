@@ -21,7 +21,6 @@ import (
 	"testing"
 
 	"github.com/hashicorp/memberlist"
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/promslog"
 )
 
@@ -84,6 +83,5 @@ func newChannel(
 		sendOversize,
 		promslog.NewNopLogger(),
 		make(chan struct{}),
-		prometheus.NewRegistry(),
 	)
 }

@@ -16,12 +16,9 @@ package cluster
 import (
 	"log/slog"
 	"sync"
-	"time"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/hashicorp/memberlist"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 
 	"github.com/prometheus/alertmanager/cluster/clusterpb"
 )
@@ -36,11 +33,6 @@ type Channel struct {
 
 	msgc   chan []byte
 	logger *slog.Logger
-
-	oversizeGossipMessageFailureTotal prometheus.Counter
-	oversizeGossipMessageDroppedTotal prometheus.Counter
-	oversizeGossipMessageSentTotal    prometheus.Counter
-	oversizeGossipDuration            prometheus.Histogram
 }
 
 // NewChannel creates a new Channel struct, which handles sending normal and
@@ -52,47 +44,14 @@ func NewChannel(
 	sendOversize func(*memberlist.Node, []byte) error,
 	logger *slog.Logger,
 	stopc <-chan struct{},
-	reg prometheus.Registerer,
 ) *Channel {
-	if reg == nil {
-		return nil
-	}
-	oversizeGossipMessageFailureTotal := promauto.With(reg).NewCounter(prometheus.CounterOpts{
-		Name:        "alertmanager_oversized_gossip_message_failure_total",
-		Help:        "Number of oversized gossip message sends that failed.",
-		ConstLabels: prometheus.Labels{"key": key},
-	})
-	oversizeGossipMessageSentTotal := promauto.With(reg).NewCounter(prometheus.CounterOpts{
-		Name:        "alertmanager_oversized_gossip_message_sent_total",
-		Help:        "Number of oversized gossip message sent.",
-		ConstLabels: prometheus.Labels{"key": key},
-	})
-	oversizeGossipMessageDroppedTotal := promauto.With(reg).NewCounter(prometheus.CounterOpts{
-		Name:        "alertmanager_oversized_gossip_message_dropped_total",
-		Help:        "Number of oversized gossip messages that were dropped due to a full message queue.",
-		ConstLabels: prometheus.Labels{"key": key},
-	})
-	oversizeGossipDuration := promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
-		Name:                            "alertmanager_oversize_gossip_message_duration_seconds",
-		Help:                            "Duration of oversized gossip message requests.",
-		ConstLabels:                     prometheus.Labels{"key": key},
-		Buckets:                         prometheus.DefBuckets,
-		NativeHistogramBucketFactor:     1.1,
-		NativeHistogramMaxBucketNumber:  100,
-		NativeHistogramMinResetDuration: 1 * time.Hour,
-	})
-
 	c := &Channel{
-		key:                               key,
-		send:                              send,
-		peers:                             peers,
-		logger:                            logger,
-		msgc:                              make(chan []byte, 200),
-		sendOversize:                      sendOversize,
-		oversizeGossipMessageFailureTotal: oversizeGossipMessageFailureTotal,
-		oversizeGossipMessageDroppedTotal: oversizeGossipMessageDroppedTotal,
-		oversizeGossipMessageSentTotal:    oversizeGossipMessageSentTotal,
-		oversizeGossipDuration:            oversizeGossipDuration,
+		key:          key,
+		send:         send,
+		peers:        peers,
+		logger:       logger,
+		msgc:         make(chan []byte, 200),
+		sendOversize: sendOversize,
 	}
 
 	go c.handleOverSizedMessages(stopc)
@@ -111,14 +70,10 @@ func (c *Channel) handleOverSizedMessages(stopc <-chan struct{}) {
 				wg.Add(1)
 				go func(n *memberlist.Node) {
 					defer wg.Done()
-					c.oversizeGossipMessageSentTotal.Inc()
-					start := time.Now()
 					if err := c.sendOversize(n, b); err != nil {
 						c.logger.Debug("failed to send reliable", "key", c.key, "node", n, "err", err)
-						c.oversizeGossipMessageFailureTotal.Inc()
 						return
 					}
-					c.oversizeGossipDuration.Observe(time.Since(start).Seconds())
 				}(n)
 			}
 
@@ -141,7 +96,6 @@ func (c *Channel) Broadcast(b []byte) {
 		case c.msgc <- b:
 		default:
 			c.logger.Debug("oversized gossip channel full")
-			c.oversizeGossipMessageDroppedTotal.Inc()
 		}
 	} else {
 		c.send(b)
