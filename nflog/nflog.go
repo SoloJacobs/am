@@ -88,9 +88,9 @@ type Log struct {
 	broadcast func([]byte)
 }
 
-// MaintenanceFunc represents the function to run as part of the periodic maintenance for the nflog.
+// maintenanceFunc represents the function to run as part of the periodic maintenance for the nflog.
 // It returns the size of the snapshot taken or an error if it failed.
-type MaintenanceFunc func() (int64, error)
+type maintenanceFunc func() (int64, error)
 
 type state map[string]*pb.MeshEntry
 
@@ -221,7 +221,7 @@ func (l *Log) now() time.Time {
 // file is set, a snapshot is written to it afterwards.
 // Terminates on receiving from stopc.
 // If not nil, the last argument is an override for what to do as part of the maintenance - for advanced usage.
-func (l *Log) Maintenance(interval time.Duration, snapf string, stopc <-chan struct{}, override MaintenanceFunc) {
+func (l *Log) Maintenance(interval time.Duration, snapf string, stopc <-chan struct{}, override maintenanceFunc) {
 	if interval == 0 || stopc == nil {
 		l.logger.Error("interval or stop signal are missing - not running maintenance")
 		return
@@ -229,10 +229,10 @@ func (l *Log) Maintenance(interval time.Duration, snapf string, stopc <-chan str
 	t := l.clock.NewTicker(interval)
 	defer t.Stop()
 
-	var doMaintenance MaintenanceFunc
+	var doMaintenance maintenanceFunc
 	doMaintenance = func() (int64, error) {
 		var size int64
-		if _, err := l.GC(); err != nil {
+		if _, err := l.gc(); err != nil {
 			return size, err
 		}
 		if snapf == "" {
@@ -242,7 +242,7 @@ func (l *Log) Maintenance(interval time.Duration, snapf string, stopc <-chan str
 		if err != nil {
 			return size, err
 		}
-		if size, err = l.Snapshot(f); err != nil {
+		if size, err = l.snapshot(f); err != nil {
 			_ = f.Close()
 			return size, err
 		}
@@ -337,8 +337,8 @@ func (l *Log) Log(r *pb.Receiver, gkey string, firingAlerts, resolvedAlerts []ui
 	return nil
 }
 
-// GC implements the Log interface.
-func (l *Log) GC() (int, error) {
+// gc implements the Log interface.
+func (l *Log) gc() (int, error) {
 	now := l.now()
 	var n int
 
@@ -400,8 +400,8 @@ func (l *Log) loadSnapshot(r io.Reader) error {
 	return nil
 }
 
-// Snapshot implements the Log interface.
-func (l *Log) Snapshot(w io.Writer) (int64, error) {
+// snapshot implements the Log interface.
+func (l *Log) snapshot(w io.Writer) (int64, error) {
 	l.mtx.RLock()
 	defer l.mtx.RUnlock()
 

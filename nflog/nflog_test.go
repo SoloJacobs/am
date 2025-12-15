@@ -47,7 +47,7 @@ func TestLogGC(t *testing.T) {
 		},
 		clock: mockClock,
 	}
-	n, err := l.GC()
+	n, err := l.gc()
 	require.NoError(t, err, "unexpected error in garbage collection")
 	require.Equal(t, 2, n, "unexpected number of removed entries")
 
@@ -110,7 +110,7 @@ func TestLogSnapshot(t *testing.T) {
 		for _, e := range c.entries {
 			l1.st[stateKey(string(e.Entry.GroupKey), e.Entry.Receiver)] = e
 		}
-		_, err = l1.Snapshot(f)
+		_, err = l1.snapshot(f)
 		require.NoError(t, err, "creating snapshot failed")
 		require.NoError(t, f.Close(), "closing snapshot file failed")
 
