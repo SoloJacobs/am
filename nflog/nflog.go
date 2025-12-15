@@ -31,8 +31,6 @@ import (
 
 	"github.com/coder/quartz"
 	"github.com/matttproud/golang_protobuf_extensions/pbutil"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/promslog"
 
 	"github.com/prometheus/alertmanager/cluster"
@@ -81,7 +79,6 @@ type Log struct {
 	clock quartz.Clock
 
 	logger    *slog.Logger
-	metrics   *metrics
 	retention time.Duration
 
 	// For now we only store the most recently added log entry.
@@ -94,67 +91,6 @@ type Log struct {
 // MaintenanceFunc represents the function to run as part of the periodic maintenance for the nflog.
 // It returns the size of the snapshot taken or an error if it failed.
 type MaintenanceFunc func() (int64, error)
-
-type metrics struct {
-	gcDuration              prometheus.Summary
-	snapshotDuration        prometheus.Summary
-	snapshotSize            prometheus.Gauge
-	queriesTotal            prometheus.Counter
-	queryErrorsTotal        prometheus.Counter
-	queryDuration           prometheus.Histogram
-	propagatedMessagesTotal prometheus.Counter
-	maintenanceTotal        prometheus.Counter
-	maintenanceErrorsTotal  prometheus.Counter
-}
-
-func newMetrics(r prometheus.Registerer) *metrics {
-	m := &metrics{}
-
-	m.gcDuration = promauto.With(r).NewSummary(prometheus.SummaryOpts{
-		Name:       "alertmanager_nflog_gc_duration_seconds",
-		Help:       "Duration of the last notification log garbage collection cycle.",
-		Objectives: map[float64]float64{},
-	})
-	m.snapshotDuration = promauto.With(r).NewSummary(prometheus.SummaryOpts{
-		Name:       "alertmanager_nflog_snapshot_duration_seconds",
-		Help:       "Duration of the last notification log snapshot.",
-		Objectives: map[float64]float64{},
-	})
-	m.snapshotSize = promauto.With(r).NewGauge(prometheus.GaugeOpts{
-		Name: "alertmanager_nflog_snapshot_size_bytes",
-		Help: "Size of the last notification log snapshot in bytes.",
-	})
-	m.maintenanceTotal = promauto.With(r).NewCounter(prometheus.CounterOpts{
-		Name: "alertmanager_nflog_maintenance_total",
-		Help: "How many maintenances were executed for the notification log.",
-	})
-	m.maintenanceErrorsTotal = promauto.With(r).NewCounter(prometheus.CounterOpts{
-		Name: "alertmanager_nflog_maintenance_errors_total",
-		Help: "How many maintenances were executed for the notification log that failed.",
-	})
-	m.queriesTotal = promauto.With(r).NewCounter(prometheus.CounterOpts{
-		Name: "alertmanager_nflog_queries_total",
-		Help: "Number of notification log queries were received.",
-	})
-	m.queryErrorsTotal = promauto.With(r).NewCounter(prometheus.CounterOpts{
-		Name: "alertmanager_nflog_query_errors_total",
-		Help: "Number notification log received queries that failed.",
-	})
-	m.queryDuration = promauto.With(r).NewHistogram(prometheus.HistogramOpts{
-		Name:                            "alertmanager_nflog_query_duration_seconds",
-		Help:                            "Duration of notification log query evaluation.",
-		Buckets:                         prometheus.DefBuckets,
-		NativeHistogramBucketFactor:     1.1,
-		NativeHistogramMaxBucketNumber:  100,
-		NativeHistogramMinResetDuration: 1 * time.Hour,
-	})
-	m.propagatedMessagesTotal = promauto.With(r).NewCounter(prometheus.CounterOpts{
-		Name: "alertmanager_nflog_gossip_messages_propagated_total",
-		Help: "Number of received gossip messages that have been further gossiped.",
-	})
-
-	return m
-}
 
 type state map[string]*pb.MeshEntry
 
@@ -226,17 +162,12 @@ type Options struct {
 
 	Retention time.Duration
 
-	Logger  *slog.Logger
-	Metrics prometheus.Registerer
+	Logger *slog.Logger
 }
 
 func (o *Options) validate() error {
 	if o.SnapshotFile != "" && o.SnapshotReader != nil {
 		return errors.New("only one of SnapshotFile and SnapshotReader must be set")
-	}
-
-	if o.Metrics == nil {
-		return errors.New("missing prometheus.Registerer")
 	}
 
 	return nil
@@ -255,7 +186,6 @@ func New(o Options) (*Log, error) {
 		logger:    promslog.NewNopLogger(),
 		st:        state{},
 		broadcast: func([]byte) {},
-		metrics:   newMetrics(o.Metrics),
 	}
 
 	if o.Logger != nil {
@@ -270,7 +200,7 @@ func New(o Options) (*Log, error) {
 			l.logger.Debug("notification log snapshot file doesn't exist", "err", err)
 		} else {
 			o.SnapshotReader = r
-			defer r.Close()
+			defer func() { _ = r.Close() }()
 		}
 	}
 
@@ -313,7 +243,7 @@ func (l *Log) Maintenance(interval time.Duration, snapf string, stopc <-chan str
 			return size, err
 		}
 		if size, err = l.Snapshot(f); err != nil {
-			f.Close()
+			_ = f.Close()
 			return size, err
 		}
 		return size, f.Close()
@@ -324,13 +254,10 @@ func (l *Log) Maintenance(interval time.Duration, snapf string, stopc <-chan str
 	}
 
 	runMaintenance := func(do func() (int64, error)) error {
-		l.metrics.maintenanceTotal.Inc()
 		start := l.now().UTC()
 		l.logger.Debug("Running maintenance")
 		size, err := do()
-		l.metrics.snapshotSize.Set(float64(size))
 		if err != nil {
-			l.metrics.maintenanceErrorsTotal.Inc()
 			return err
 		}
 		l.logger.Debug("Maintenance done", "duration", l.now().Sub(start), "size", size)
@@ -412,9 +339,6 @@ func (l *Log) Log(r *pb.Receiver, gkey string, firingAlerts, resolvedAlerts []ui
 
 // GC implements the Log interface.
 func (l *Log) GC() (int, error) {
-	start := time.Now()
-	defer func() { l.metrics.gcDuration.Observe(time.Since(start).Seconds()) }()
-
 	now := l.now()
 	var n int
 
@@ -436,9 +360,6 @@ func (l *Log) GC() (int, error) {
 
 // Query implements the Log interface.
 func (l *Log) Query(params ...QueryParam) ([]*pb.Entry, error) {
-	start := time.Now()
-	l.metrics.queriesTotal.Inc()
-
 	entries, err := func() ([]*pb.Entry, error) {
 		q := &query{}
 		for _, p := range params {
@@ -462,10 +383,6 @@ func (l *Log) Query(params ...QueryParam) ([]*pb.Entry, error) {
 		}
 		return nil, ErrNotFound
 	}()
-	if err != nil {
-		l.metrics.queryErrorsTotal.Inc()
-	}
-	l.metrics.queryDuration.Observe(time.Since(start).Seconds())
 	return entries, err
 }
 
@@ -485,9 +402,6 @@ func (l *Log) loadSnapshot(r io.Reader) error {
 
 // Snapshot implements the Log interface.
 func (l *Log) Snapshot(w io.Writer) (int64, error) {
-	start := time.Now()
-	defer func() { l.metrics.snapshotDuration.Observe(time.Since(start).Seconds()) }()
-
 	l.mtx.RLock()
 	defer l.mtx.RUnlock()
 
@@ -524,7 +438,6 @@ func (l *Log) Merge(b []byte) error {
 			// propagate oversized messages because they're sent to
 			// all nodes already.
 			l.broadcast(b)
-			l.metrics.propagatedMessagesTotal.Inc()
 			l.logger.Debug("gossiping new entry", "entry", e)
 		}
 	}

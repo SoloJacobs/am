@@ -26,8 +26,6 @@ import (
 	pb "github.com/prometheus/alertmanager/nflog/nflogpb"
 
 	"github.com/coder/quartz"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 )
 
@@ -47,8 +45,7 @@ func TestLogGC(t *testing.T) {
 			"a2": newEntry(now.Add(time.Second)),
 			"a3": newEntry(now.Add(-time.Second)),
 		},
-		clock:   mockClock,
-		metrics: newMetrics(prometheus.NewRegistry()),
+		clock: mockClock,
 	}
 	n, err := l.GC()
 	require.NoError(t, err, "unexpected error in garbage collection")
@@ -107,8 +104,7 @@ func TestLogSnapshot(t *testing.T) {
 		require.NoError(t, err, "creating temp file failed")
 
 		l1 := &Log{
-			st:      state{},
-			metrics: newMetrics(nil),
+			st: state{},
 		}
 		// Setup internal state manually.
 		for _, e := range c.entries {
@@ -135,9 +131,7 @@ func TestWithMaintenance_SupportsCustomCallback(t *testing.T) {
 	f, err := os.CreateTemp(t.TempDir(), "snapshot")
 	require.NoError(t, err, "creating temp file failed")
 	stopc := make(chan struct{})
-	reg := prometheus.NewPedanticRegistry()
 	opts := Options{
-		Metrics:      reg,
 		SnapshotFile: f.Name(),
 	}
 
@@ -172,15 +166,6 @@ func TestWithMaintenance_SupportsCustomCallback(t *testing.T) {
 	wg.Wait()
 
 	require.EqualValues(t, 2, calls.Load())
-	// Check the maintenance metrics.
-	require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
-# HELP alertmanager_nflog_maintenance_errors_total How many maintenances were executed for the notification log that failed.
-# TYPE alertmanager_nflog_maintenance_errors_total counter
-alertmanager_nflog_maintenance_errors_total 0
-# HELP alertmanager_nflog_maintenance_total How many maintenances were executed for the notification log.
-# TYPE alertmanager_nflog_maintenance_total counter
-alertmanager_nflog_maintenance_total 2
-`), "alertmanager_nflog_maintenance_total", "alertmanager_nflog_maintenance_errors_total"))
 }
 
 func TestReplaceFile(t *testing.T) {
@@ -331,7 +316,7 @@ func TestStateDataCoding(t *testing.T) {
 }
 
 func TestQuery(t *testing.T) {
-	opts := Options{Metrics: prometheus.NewRegistry(), Retention: time.Second}
+	opts := Options{Retention: time.Second}
 	nl, err := New(opts)
 	if err != nil {
 		require.NoError(t, err, "constructing nflog failed")
