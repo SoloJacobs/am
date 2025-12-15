@@ -23,7 +23,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"maps"
 	"math/rand"
 	"os"
 	"sync"
@@ -93,12 +92,6 @@ type Log struct {
 type maintenanceFunc func() (int64, error)
 
 type state map[string]*pb.MeshEntry
-
-func (s state) clone() state {
-	c := make(state, len(s))
-	maps.Copy(c, s)
-	return c
-}
 
 // merge returns true or false whether the MeshEntry was merged or
 // not. This information is used to decide to gossip the message further.

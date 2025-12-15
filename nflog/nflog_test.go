@@ -16,6 +16,7 @@ package nflog
 import (
 	"bytes"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"sync"
@@ -194,6 +195,12 @@ func TestReplaceFile(t *testing.T) {
 	res, err := io.ReadAll(ofr)
 	require.NoError(t, err, "reading original file failed")
 	require.Equal(t, "test", string(res), "unexpected file contents")
+}
+
+func (s state) clone() state {
+	c := make(state, len(s))
+	maps.Copy(c, s)
+	return c
 }
 
 func TestStateMerge(t *testing.T) {
