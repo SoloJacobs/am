@@ -4,7 +4,7 @@ STACK_NAME := monitoring
 .PHONY: up down build logs
 
 up: build
-	docker stack deploy -c $(PROJECT_ROOT)/assets/docker-compose.yaml $(STACK_NAME)
+	docker stack deploy --detach=true -c $(PROJECT_ROOT)/assets/docker-compose.yaml $(STACK_NAME)
 
 down:
 	docker stack rm $(STACK_NAME)
