@@ -27,12 +27,17 @@ services:
         published: 9093
         protocol: tcp
         mode: host
+    configs:
+      - source: alertmanager_config
+        target: /etc/alertmanager/alertmanager.yaml
     networks:
       - monitoring
     extra_hosts:
       - "host.docker.internal:host-gateway"
     deploy:
       replicas: 1
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yaml'
 
   alert_receiver:
     build:

@@ -3,8 +3,7 @@ FROM cgr.dev/chainguard/wolfi-base:latest
 WORKDIR /app
 
 COPY bin/alertmanager /bin/alertmanager
-COPY assets/alertmanager.yaml /etc/alertmanager/alertmanager.yaml
 
 EXPOSE 9093
 ENTRYPOINT [ "/bin/alertmanager" ]
-CMD        [ "--config.file=/etc/alertmanager/alertmanager.yaml" ]
+CMD        [ ]
