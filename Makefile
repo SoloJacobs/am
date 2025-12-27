@@ -10,7 +10,6 @@ down:
 	docker stack rm $(STACK_NAME)
 
 build:
-	docker build -t my-custom-prometheus:latest -f $(PROJECT_ROOT)/Dockerfile.prometheus .
 	docker build -t my-custom-alertmanager:latest -f $(PROJECT_ROOT)/Dockerfile.alertmanager .
 
 logs_prometheus:
