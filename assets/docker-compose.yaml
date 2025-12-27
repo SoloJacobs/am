@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  prometheus:
+    image: my-custom-prometheus:latest
+    ports:
+      - target: 9090
+        published: 9090
+        protocol: tcp
+        mode: host
+    networks:
+      - monitoring
+    deploy:
+      replicas: 1
+
+  alertmanager:
+    image: my-custom-alertmanager:latest
+    ports:
+      - target: 9093
+        published: 9093
+        protocol: tcp
+        mode: host
+    networks:
+      - monitoring
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    deploy:
+      replicas: 1
+
+networks:
+  monitoring:
