@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   prometheus:
     image: prom/prometheus:latest
@@ -51,6 +49,9 @@ services:
 configs:
   prometheus_config:
     file: ./prometheus.yaml
+
+  alertmanager_config:
+    file: ./alertmanager.yaml
 
 networks:
   monitoring:
