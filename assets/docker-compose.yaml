@@ -15,6 +15,8 @@ services:
       - monitoring
     deploy:
       replicas: 1
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yaml'
 
   alertmanager:
     build:
