@@ -1,0 +1,9 @@
+FROM debian:bookworm-slim
+
+WORKDIR /app
+
+COPY bin/alert-receiver /bin/alert-receiver
+
+EXPOSE 9080
+ENTRYPOINT [ "/bin/alert-receiver" ]
+CMD        [ ]

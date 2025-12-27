@@ -30,6 +30,20 @@ services:
     deploy:
       replicas: 1
 
+  alert_receiver:
+    image: my-custom-alert-receiver:latest
+    ports:
+      - target: 9080
+        published: 9080
+        protocol: tcp
+        mode: host
+    networks:
+      - monitoring
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    deploy:
+      replicas: 1
+
 configs:
   prometheus_config:
     file: ./prometheus.yaml
