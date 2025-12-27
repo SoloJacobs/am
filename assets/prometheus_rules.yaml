@@ -1,0 +1,9 @@
+groups:
+- name: test-rule
+  rules:
+  - alert: AlwaysFiringTest
+    expr: vector(1)
+    labels:
+      severity: critical
+    annotations:
+      summary: "Always fires."

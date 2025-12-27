@@ -9,6 +9,8 @@ services:
     configs:
       - source: prometheus_config
         target: /etc/prometheus/prometheus.yaml
+      - source: prometheus_rules
+        target: /etc/prometheus/rules.yaml
     networks:
       - monitoring
     deploy:
@@ -49,6 +51,9 @@ services:
 configs:
   prometheus_config:
     file: ./prometheus.yaml
+
+  prometheus_rules:
+    file: ./prometheus_rules.yaml
 
   alertmanager_config:
     file: ./alertmanager.yaml
