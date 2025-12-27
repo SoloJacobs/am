@@ -17,7 +17,9 @@ services:
       replicas: 1
 
   alertmanager:
-    image: my-custom-alertmanager:latest
+    build:
+      context: ..
+      dockerfile: Dockerfile.alertmanager
     ports:
       - target: 9093
         published: 9093
@@ -31,7 +33,9 @@ services:
       replicas: 1
 
   alert_receiver:
-    image: my-custom-alert-receiver:latest
+    build:
+      context: ..
+      dockerfile: Dockerfile.alert-receiver
     ports:
       - target: 9080
         published: 9080
