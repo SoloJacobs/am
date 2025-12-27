@@ -6,10 +6,10 @@ route:
   group_wait: 10s
   group_interval: 10s
   repeat_interval: 1h
-  receiver: 'local-webhook'
+  receiver: 'alert-receiver'
 
 receivers:
-  - name: 'local-webhook'
+  - name: 'alert-receiver'
     webhook_configs:
-      - url: 'http://localhost:9080/webhook'
+      - url: 'http://alert_receiver:9080/alerts'
         send_resolved: true
