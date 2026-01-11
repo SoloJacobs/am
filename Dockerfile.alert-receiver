@@ -1,7 +1,5 @@
 FROM cgr.dev/chainguard/wolfi-base:latest
 
-WORKDIR /app
-
 COPY bin/alert-receiver /bin/alert-receiver
 
 EXPOSE 9080
