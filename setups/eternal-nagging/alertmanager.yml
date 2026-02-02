@@ -8,17 +8,4 @@ route:
 receivers:
 - name: 'local-webhook'
   webhook_configs:
-  - url: 'http://localhost:9080/alerts' # Your local receiver address
-
-inhibit_rules:
-# 1. The Source: The "Big" alert that suppresses others
-- source_match:
-    alertname: 'ClusterDown'
-    severity: 'critical'
-
-  # 2. The Target: The "Small" alert to be silenced
-  #    (regex matches 'HostDown' or 'InstanceDown')
-  target_match_re:
-    alertname: 'HostDown|InstanceDown'
-
-  equal: []
+  - url: 'http://localhost:9080/alerts'
