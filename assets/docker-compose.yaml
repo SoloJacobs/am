@@ -18,7 +18,7 @@ services:
     command:
       - '--config.file=/etc/prometheus/prometheus.yaml'
 
-  alertmanager:
+  alertmanager_one:
     build:
       context: ..
       dockerfile: Dockerfile.alertmanager
@@ -38,6 +38,29 @@ services:
       replicas: 1
     command:
       - '--config.file=/etc/alertmanager/alertmanager.yaml'
+      - '--cluster.peer=alertmanager_two:9094'
+
+  alertmanager_two:
+    build:
+      context: ..
+      dockerfile: Dockerfile.alertmanager
+    ports:
+      - target: 9093
+        published: 9094
+        protocol: tcp
+        mode: host
+    configs:
+      - source: alertmanager_config
+        target: /etc/alertmanager/alertmanager.yaml
+    networks:
+      - monitoring
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    deploy:
+      replicas: 1
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yaml'
+      - '--cluster.peer=alertmanager_one:9094'
 
   alert_receiver:
     build:

@@ -6,7 +6,8 @@ alerting:
   alertmanagers:
     - static_configs:
         - targets:
-            - 'alertmanager:9093'
+            - 'alertmanager_one:9093'
+            - 'alertmanager_two:9093'
 
 rule_files:
   - "/etc/prometheus/rules.yaml"
