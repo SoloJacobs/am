@@ -144,7 +144,9 @@ func SendAlert(payload []Alert, port int) {
 		fmt.Printf("%s !!! Failed to send alert: %v\n", prefix, err)
 		return
 	}
-	resp.Body.Close()
-
-	fmt.Printf("%s Alerts sent to :%d \n", prefix, port)
+	defer resp.Body.Close() // Best practice: use defer to ensure closure
+	for _, alert := range payload {
+		name := alert.Labels["alertname"]
+		fmt.Printf("%s Alert `%s` sent to :%d \n", prefix, name, port)
+	}
 }
