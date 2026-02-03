@@ -1,0 +1,11 @@
+route:
+  group_by: [...]
+  group_wait: 1s
+  group_interval: 2s
+  repeat_interval: 24h
+  receiver: 'local-webhook'
+
+receivers:
+- name: 'local-webhook'
+  webhook_configs:
+  - url: 'http://localhost:9080/alerts'
