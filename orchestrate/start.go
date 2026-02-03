@@ -57,7 +57,7 @@ func StartReceiver() (*exec.Cmd, error) {
 	return cmd, nil
 }
 
-func StartLocalCluster(setupName string) ([]*exec.Cmd, error) {
+func StartLocalCluster(setupName string, count int) ([]*exec.Cmd, error) {
 	cwd, _ := os.Getwd()
 	binaryPath := filepath.Join(cwd, "bin", "alertmanager")
 	configPath := filepath.Join(cwd, "setups", setupName, "alertmanager.yml")
@@ -75,7 +75,8 @@ func StartLocalCluster(setupName string) ([]*exec.Cmd, error) {
 	var runningCmds []*exec.Cmd
 	bootstrapPeer := fmt.Sprintf("127.0.0.1:%d", instances[0].ClusterPort)
 
-	for i, inst := range instances {
+	for i := range count {
+		inst := instances[i]
 		tempStorage, err := os.MkdirTemp("", fmt.Sprintf("am-storage-%s-", inst.Name))
 		if err != nil {
 			return nil, err

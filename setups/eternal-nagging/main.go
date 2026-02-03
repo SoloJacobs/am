@@ -23,7 +23,7 @@ func createPayload(now time.Time) []orchestrate.Alert {
 }
 
 func main() {
-	_, err := orchestrate.StartLocalCluster("eternal-nagging")
+	_, err := orchestrate.StartLocalCluster("eternal-nagging", 3)
 	if err != nil {
 		panic(err)
 	}
